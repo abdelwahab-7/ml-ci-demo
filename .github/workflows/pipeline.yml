@@ -7,9 +7,6 @@ on:
     branches: [ main, master ]
   workflow_dispatch:
 
-env:
-  MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
-
 jobs:
   validate:
     runs-on: ubuntu-latest
@@ -27,19 +24,49 @@ jobs:
           pip install --no-cache-dir -r requirements.txt
           pip install dvc
 
-      - name: Pull data with DVC
+      - name: Start MLflow server
         run: |
-          # For local files, just copy the data
-          if [ -f "data.csv" ]; then
-            echo "Data file already exists"
-          else
-            echo "Error: data.csv not found"
-            exit 1
-          fi
+          # Start MLflow server in background
+          python -m mlflow server --backend-store-uri sqlite:///mlflow.db --default-artifact-root ./artifacts --host 0.0.0.0 --port 5000 > mlflow.log 2>&1 &
+          echo "MLFLOW_PID=$!" >> $GITHUB_ENV
+          # Wait for server to be ready
+          for i in {1..30}; do
+            if curl -s http://localhost:5000 > /dev/null; then
+              echo "MLflow server started"
+              break
+            fi
+            sleep 1
+          done
+
+      - name: Setup DVC remote and pull data
+        run: |
+          # Ensure data is tracked by DVC and push to a local remote
+          dvc add data.csv
+          dvc remote add -d myremote ./dvc_remote || true
+          dvc push
+          # Remove data to simulate needing to pull
+          rm data.csv
+          # Now pull from the local remote
+          dvc pull
 
       - name: Train model
         run: |
-          python train.py
+          MLFLOW_TRACKING_URI=http://localhost:5000 python train.py
+
+      - name: Stop MLflow server
+        if: always()
+        run: |
+          kill ${{ env.MLFLOW_PID }} || true
+
+      - name: Package MLflow database
+        run: |
+          tar -czf mlflow_db.tar.gz mlflow.db
+
+      - name: Upload MLflow database artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlflow_db
+          path: mlflow_db.tar.gz
 
       - name: Upload model_info artifact
         uses: actions/upload-artifact@v4
@@ -63,6 +90,29 @@ jobs:
         run: |
           pip install --no-cache-dir -r requirements.txt
 
+      - name: Download MLflow database artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: mlflow_db
+          path: .
+
+      - name: Extract database
+        run: |
+          tar -xzf mlflow_db.tar.gz
+
+      - name: Start MLflow server
+        run: |
+          python -m mlflow server --backend-store-uri sqlite:///mlflow.db --default-artifact-root ./artifacts --host 0.0.0.0 --port 5000 > mlflow.log 2>&1 &
+          echo "MLFLOW_PID=$!" >> $GITHUB_ENV
+          # Wait for server to be ready
+          for i in {1..30}; do
+            if curl -s http://localhost:5000 > /dev/null; then
+              echo "MLflow server started"
+              break
+            fi
+            sleep 1
+          done
+
       - name: Download model_info artifact
         uses: actions/download-artifact@v4
         with:
@@ -71,14 +121,16 @@ jobs:
 
       - name: Check accuracy threshold
         run: |
-          python check_threshold.py
-        env:
-          MLFLOW_TRACKING_URI: ${{ env.MLFLOW_TRACKING_URI }}
+          MLFLOW_TRACKING_URI=http://localhost:5000 python check_threshold.py
+
+      - name: Stop MLflow server
+        if: always()
+        run: |
+          kill ${{ env.MLFLOW_PID }} || true
 
       - name: Mock Docker build
+        if: success()
         run: |
           RUN_ID=$(cat model_info.txt)
           echo "Building Docker image for Run ID: ${RUN_ID}"
-          # In a real scenario, you would run:
-          # docker build --build-arg RUN_ID=${RUN_ID} -t model-image .
           echo "Docker build simulation complete"
