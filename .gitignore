@@ -12,3 +12,4 @@ __pycache__/
 *.pkl
 .env
 dvc_remote/
+data.csv
