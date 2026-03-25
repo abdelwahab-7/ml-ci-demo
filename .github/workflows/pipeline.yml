@@ -38,25 +38,9 @@ jobs:
             sleep 1
           done
 
-      - name: Setup DVC remote and pull data
+      - name: Pull data with DVC
         run: |
-          # If data.csv doesn't exist, generate it
-          if [ ! -f "data.csv" ]; then
-            echo "Generating dataset..."
-            python generate_data.py
-          fi
-          
-          # Setup DVC remote
-          dvc remote add -d myremote ./dvc_remote || true
-          
-          # Track data with DVC and push to local remote
-          dvc add data.csv
-          dvc push
-          
-          # Remove data to simulate needing to pull from remote storage
-          rm data.csv
-          
-          # Pull data from DVC remote (this is the key demonstration)
+          # This will restore data.csv from the DVC cache (tracked in git)
           dvc pull
 
       - name: Train model
