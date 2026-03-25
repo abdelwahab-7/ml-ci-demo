@@ -11,3 +11,4 @@ __pycache__/
 .idea/
 *.pkl
 .env
+dvc_remote/
