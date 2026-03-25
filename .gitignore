@@ -1,0 +1,14 @@
+/data.csv
+*.log
+*.db
+artifacts/
+mlruns/
+model_info.txt
+__pycache__/
+*.pyc
+.DS_Store
+.env
+.vscode/
+.idea/
+*.pkl
+.env
