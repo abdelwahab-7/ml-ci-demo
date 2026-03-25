@@ -6,6 +6,15 @@ on:
   pull_request:
     branches: [ main, master ]
   workflow_dispatch:
+    inputs:
+      model_type:
+        description: 'Type of model to train (good or bad)'
+        required: true
+        default: 'good'
+        type: choice
+        options:
+          - good
+          - bad
 
 jobs:
   validate:
@@ -45,7 +54,12 @@ jobs:
 
       - name: Train model
         run: |
-          MLFLOW_TRACKING_URI=http://localhost:5000 python train.py
+          TRAIN_SCRIPT="train.py"
+          if [ "${{ inputs.model_type }}" = "bad" ]; then
+            TRAIN_SCRIPT="train_bad.py"
+          fi
+          echo "Using training script: $TRAIN_SCRIPT"
+          MLFLOW_TRACKING_URI=http://localhost:5000 python $TRAIN_SCRIPT
 
       - name: Stop MLflow server
         if: always()
